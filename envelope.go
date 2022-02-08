@@ -1,4 +1,4 @@
-package melody
+package comet
 
 type envelope struct {
 	t      int

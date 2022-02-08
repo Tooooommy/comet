@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Tooooommy/comet"
 	"github.com/gin-gonic/gin"
-	"gopkg.in/olahol/melody.v1"
 )
 
 // GopherInfo contains information about the gopher on screen
@@ -17,8 +17,9 @@ type GopherInfo struct {
 
 func main() {
 	router := gin.Default()
-	mrouter := melody.New()
-	gophers := make(map[*melody.Session]*GopherInfo)
+	m := comet.New()
+	h := comet.NewHub(1024)
+	gophers := make(map[*comet.Session]*GopherInfo)
 	lock := new(sync.Mutex)
 	counter := 0
 
@@ -27,10 +28,11 @@ func main() {
 	})
 
 	router.GET("/ws", func(c *gin.Context) {
-		mrouter.HandleRequest(c.Writer, c.Request)
+		m.HandleRequest(c.Writer, c.Request)
 	})
 
-	mrouter.HandleConnect(func(s *melody.Session) {
+	m.HandleConnect(func(s *comet.Session) {
+		h.Register(s)
 		lock.Lock()
 		for _, info := range gophers {
 			s.Write([]byte("set " + info.ID + " " + info.X + " " + info.Y))
@@ -41,21 +43,22 @@ func main() {
 		lock.Unlock()
 	})
 
-	mrouter.HandleDisconnect(func(s *melody.Session) {
+	m.HandleDisconnect(func(s *comet.Session) {
+		h.Unregister(s)
 		lock.Lock()
-		mrouter.BroadcastOthers([]byte("dis "+gophers[s].ID), s)
+		h.BroadcastOthers([]byte("dis "+gophers[s].ID), s)
 		delete(gophers, s)
 		lock.Unlock()
 	})
 
-	mrouter.HandleMessage(func(s *melody.Session, msg []byte) {
+	m.HandleMessage(func(s *comet.Session, msg []byte) {
 		p := strings.Split(string(msg), " ")
 		lock.Lock()
 		info := gophers[s]
 		if len(p) == 2 {
 			info.X = p[0]
 			info.Y = p[1]
-			mrouter.BroadcastOthers([]byte("set "+info.ID+" "+info.X+" "+info.Y), s)
+			h.BroadcastOthers([]byte("set "+info.ID+" "+info.X+" "+info.Y), s)
 		}
 		lock.Unlock()
 	})

@@ -1,9 +1,9 @@
 package main
 
 import (
+	"github.com/Tooooommy/comet"
+	"github.com/fsnotify/fsnotify"
 	"github.com/gin-gonic/gin"
-	"github.com/go-fsnotify/fsnotify"
-	"gopkg.in/olahol/melody.v1"
 	"io/ioutil"
 	"net/http"
 )
@@ -12,7 +12,14 @@ func main() {
 	file := "file.txt"
 
 	r := gin.Default()
-	m := melody.New()
+	m := comet.New()
+	h := comet.NewHub(1024)
+	m.HandleConnect(func(session *comet.Session) {
+		h.Register(session)
+	})
+	m.HandleDisconnect(func(session *comet.Session) {
+		h.Unregister(session)
+	})
 	w, _ := fsnotify.NewWatcher()
 
 	r.GET("/", func(c *gin.Context) {
@@ -20,10 +27,10 @@ func main() {
 	})
 
 	r.GET("/ws", func(c *gin.Context) {
-		m.HandleRequest(c.Writer, c.Request)
+		_ = m.HandleRequest(c.Writer, c.Request)
 	})
 
-	m.HandleConnect(func(s *melody.Session) {
+	m.HandleConnect(func(s *comet.Session) {
 		content, _ := ioutil.ReadFile(file)
 		s.Write(content)
 	})
@@ -33,7 +40,7 @@ func main() {
 			ev := <-w.Events
 			if ev.Op == fsnotify.Write {
 				content, _ := ioutil.ReadFile(ev.Name)
-				m.Broadcast(content)
+				h.Broadcast(content)
 			}
 		}
 	}()

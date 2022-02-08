@@ -1,7 +1,8 @@
-package melody
+package comet
 
 import (
 	"errors"
+	"github.com/labstack/gommon/log"
 	"net/http"
 	"sync"
 	"time"
@@ -11,37 +12,35 @@ import (
 
 // Session wrapper around websocket connections.
 type Session struct {
-	Request *http.Request
-	Keys    map[string]interface{}
+	req     *http.Request
+	keys    map[string]interface{}
 	conn    *websocket.Conn
-	output  chan *envelope
-	melody  *Melody
+	buffer  *RingBuffer
+	comet   *Comet
 	open    bool
 	rwmutex *sync.RWMutex
 }
 
 func (s *Session) writeMessage(message *envelope) {
 	if s.closed() {
-		s.melody.errorHandler(s, errors.New("tried to write to closed a session"))
+		s.comet.errorHandler(s, errors.New("tried to write to Closed a session"))
 		return
 	}
-
-	select {
-	case s.output <- message:
-	default:
-		s.melody.errorHandler(s, errors.New("session message buffer is full"))
+	if err := s.buffer.Put(message); err != nil {
+		s.comet.errorHandler(s, errors.New("session message buffer is full"))
 	}
 }
 
 func (s *Session) writeRaw(message *envelope) error {
 	if s.closed() {
-		return errors.New("tried to write to a closed session")
+		return errors.New("tried to write to a Closed session")
 	}
 
-	s.conn.SetWriteDeadline(time.Now().Add(s.melody.Config.WriteWait))
+	s.conn.SetWriteDeadline(time.Now().Add(s.comet.Config.WriteWait))
 	err := s.conn.WriteMessage(message.t, message.msg)
 
 	if err != nil {
+		log.Error("WriteRaw")
 		return err
 	}
 
@@ -50,74 +49,72 @@ func (s *Session) writeRaw(message *envelope) error {
 
 func (s *Session) closed() bool {
 	s.rwmutex.RLock()
-	defer s.rwmutex.RUnlock()
-
-	return !s.open
+	closed := !s.open
+	s.rwmutex.RUnlock()
+	return closed
 }
 
 func (s *Session) close() {
 	if !s.closed() {
 		s.rwmutex.Lock()
 		s.open = false
-		s.conn.Close()
-		close(s.output)
+		s.buffer.Dispose()
+		_ = s.conn.Close()
 		s.rwmutex.Unlock()
 	}
 }
 
 func (s *Session) ping() {
-	s.writeRaw(&envelope{t: websocket.PingMessage, msg: []byte{}})
+	_ = s.writeRaw(&envelope{t: websocket.PingMessage, msg: []byte{}})
 }
 
 func (s *Session) writePump() {
-	ticker := time.NewTicker(s.melody.Config.PingPeriod)
+	ticker := time.NewTicker(s.comet.Config.PingPeriod)
 	defer ticker.Stop()
-
-loop:
 	for {
-		select {
-		case msg, ok := <-s.output:
-			if !ok {
-				break loop
-			}
-
-			err := s.writeRaw(msg)
-
-			if err != nil {
-				s.melody.errorHandler(s, err)
-				break loop
-			}
-
-			if msg.t == websocket.CloseMessage {
-				break loop
-			}
-
-			if msg.t == websocket.TextMessage {
-				s.melody.messageSentHandler(s, msg.msg)
-			}
-
-			if msg.t == websocket.BinaryMessage {
-				s.melody.messageSentHandlerBinary(s, msg.msg)
-			}
-		case <-ticker.C:
+		msg, err := s.buffer.Get(s.comet.Config.PingPeriod)
+		if err == ErrDisposed || err == ErrPanic {
+			break
+		}
+		if err == ErrTimeout {
 			s.ping()
+			continue
+		}
+
+		err = s.writeRaw(msg)
+
+		if err != nil {
+			s.comet.errorHandler(s, err)
+			break
+		}
+
+		if msg.t == websocket.CloseMessage {
+			break
+		}
+
+		if msg.t == websocket.TextMessage {
+			s.comet.messageSentHandler(s, msg.msg)
+		}
+
+		if msg.t == websocket.BinaryMessage {
+			s.comet.messageSentHandlerBinary(s, msg.msg)
 		}
 	}
 }
 
 func (s *Session) readPump() {
-	s.conn.SetReadLimit(s.melody.Config.MaxMessageSize)
-	s.conn.SetReadDeadline(time.Now().Add(s.melody.Config.PongWait))
+	s.conn.SetReadLimit(s.comet.Config.MaxMessageSize)
+	_ = s.conn.SetReadDeadline(time.Now().Add(s.comet.Config.PongWait))
 
 	s.conn.SetPongHandler(func(string) error {
-		s.conn.SetReadDeadline(time.Now().Add(s.melody.Config.PongWait))
-		s.melody.pongHandler(s)
+		_ = s.conn.SetReadDeadline(time.Now().Add(s.comet.Config.PongWait))
+		s.comet.pongHandler(s)
 		return nil
 	})
 
-	if s.melody.closeHandler != nil {
+	if s.comet.closeHandler != nil {
 		s.conn.SetCloseHandler(func(code int, text string) error {
-			return s.melody.closeHandler(s, code, text)
+			return s.comet.closeHandler(s, code, text)
 		})
 	}
 
@@ -125,16 +122,16 @@ func (s *Session) readPump() {
 		t, message, err := s.conn.ReadMessage()
 
 		if err != nil {
-			s.melody.errorHandler(s, err)
+			s.comet.errorHandler(s, err)
 			break
 		}
 
 		if t == websocket.TextMessage {
-			s.melody.messageHandler(s, message)
+			s.comet.messageHandler(s, message)
 		}
 
 		if t == websocket.BinaryMessage {
-			s.melody.messageHandlerBinary(s, message)
+			s.comet.messageHandlerBinary(s, message)
 		}
 	}
 }
@@ -142,7 +139,7 @@ func (s *Session) readPump() {
 // Write writes message to session.
 func (s *Session) Write(msg []byte) error {
 	if s.closed() {
-		return errors.New("session is closed")
+		return errors.New("session is Closed")
 	}
 
 	s.writeMessage(&envelope{t: websocket.TextMessage, msg: msg})
@@ -153,7 +150,7 @@ func (s *Session) Write(msg []byte) error {
 // WriteBinary writes a binary message to session.
 func (s *Session) WriteBinary(msg []byte) error {
 	if s.closed() {
-		return errors.New("session is closed")
+		return errors.New("session is Closed")
 	}
 
 	s.writeMessage(&envelope{t: websocket.BinaryMessage, msg: msg})
@@ -164,7 +161,7 @@ func (s *Session) WriteBinary(msg []byte) error {
 // Close closes session.
 func (s *Session) Close() error {
 	if s.closed() {
-		return errors.New("session is already closed")
+		return errors.New("session is already Closed")
 	}
 
 	s.writeMessage(&envelope{t: websocket.CloseMessage, msg: []byte{}})
@@ -176,7 +173,7 @@ func (s *Session) Close() error {
 // Use the FormatCloseMessage function to format a proper close message payload.
 func (s *Session) CloseWithMsg(msg []byte) error {
 	if s.closed() {
-		return errors.New("session is already closed")
+		return errors.New("session is already Closed")
 	}
 
 	s.writeMessage(&envelope{t: websocket.CloseMessage, msg: msg})
@@ -184,21 +181,26 @@ func (s *Session) CloseWithMsg(msg []byte) error {
 	return nil
 }
 
+// Request is http original Request.
+func (s *Session) Request() *http.Request {
+	return s.req
+}
+
 // Set is used to store a new key/value pair exclusivelly for this session.
-// It also lazy initializes s.Keys if it was not used previously.
+// It also lazy initializes s.keys if it was not used previously.
 func (s *Session) Set(key string, value interface{}) {
-	if s.Keys == nil {
-		s.Keys = make(map[string]interface{})
+	if s.keys == nil {
+		s.keys = make(map[string]interface{})
 	}
 
-	s.Keys[key] = value
+	s.keys[key] = value
 }
 
 // Get returns the value for the given key, ie: (value, true).
 // If the value does not exists it returns (nil, false)
 func (s *Session) Get(key string) (value interface{}, exists bool) {
-	if s.Keys != nil {
-		value, exists = s.Keys[key]
+	if s.keys != nil {
+		value, exists = s.keys[key]
 	}
 
 	return

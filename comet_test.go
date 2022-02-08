@@ -1,4 +1,4 @@
-package melody
+package comet
 
 import (
 	"bytes"
@@ -15,14 +15,17 @@ import (
 )
 
 type TestServer struct {
-	m *Melody
+	m *Comet
+	h *Hub
 }
 
 func NewTestServerHandler(handler handleMessageFunc) *TestServer {
 	m := New()
+	h := NewHub(1024)
 	m.HandleMessage(handler)
 	return &TestServer{
 		m: m,
+		h: h,
 	}
 }
 
@@ -158,8 +161,8 @@ func TestLen(t *testing.T) {
 
 	connected := connect - disconnected
 
-	if echo.m.Len() != connected {
-		t.Errorf("melody len %d should equal %d", echo.m.Len(), connected)
+	if echo.h.Online() != connected {
+		t.Errorf("comet len %d should equal %d", echo.h.Online(), connected)
 	}
 }
 
@@ -308,7 +311,7 @@ func TestUpgrader(t *testing.T) {
 func TestBroadcast(t *testing.T) {
 	broadcast := NewTestServer()
 	broadcast.m.HandleMessage(func(session *Session, msg []byte) {
-		broadcast.m.Broadcast(msg)
+		broadcast.h.Broadcast(msg)
 	})
 	server := httptest.NewServer(broadcast)
 	defer server.Close()
@@ -353,7 +356,7 @@ func TestBroadcast(t *testing.T) {
 func TestBroadcastBinary(t *testing.T) {
 	broadcast := NewTestServer()
 	broadcast.m.HandleMessageBinary(func(session *Session, msg []byte) {
-		broadcast.m.BroadcastBinary(msg)
+		broadcast.h.BroadcastBinary(msg)
 	})
 	server := httptest.NewServer(broadcast)
 	defer server.Close()
@@ -403,7 +406,7 @@ func TestBroadcastBinary(t *testing.T) {
 func TestBroadcastOthers(t *testing.T) {
 	broadcast := NewTestServer()
 	broadcast.m.HandleMessage(func(session *Session, msg []byte) {
-		broadcast.m.BroadcastOthers(msg, session)
+		broadcast.h.BroadcastOthers(msg, session)
 	})
 	broadcast.m.Config.PongWait = time.Second
 	broadcast.m.Config.PingPeriod = time.Second * 9 / 10
@@ -450,7 +453,7 @@ func TestBroadcastOthers(t *testing.T) {
 func TestBroadcastBinaryOthers(t *testing.T) {
 	broadcast := NewTestServer()
 	broadcast.m.HandleMessageBinary(func(session *Session, msg []byte) {
-		broadcast.m.BroadcastBinaryOthers(msg, session)
+		broadcast.h.BroadcastBinaryOthers(msg, session)
 	})
 	broadcast.m.Config.PongWait = time.Second
 	broadcast.m.Config.PingPeriod = time.Second * 9 / 10
@@ -528,7 +531,7 @@ func TestPingPong(t *testing.T) {
 func TestBroadcastFilter(t *testing.T) {
 	broadcast := NewTestServer()
 	broadcast.m.HandleMessage(func(session *Session, msg []byte) {
-		broadcast.m.BroadcastFilter(msg, func(q *Session) bool {
+		broadcast.h.BroadcastFilter(msg, func(q *Session) bool {
 			return session == q
 		})
 	})
@@ -569,7 +572,7 @@ func TestBroadcastFilter(t *testing.T) {
 func TestBroadcastBinaryFilter(t *testing.T) {
 	broadcast := NewTestServer()
 	broadcast.m.HandleMessageBinary(func(session *Session, msg []byte) {
-		broadcast.m.BroadcastBinaryFilter(msg, func(q *Session) bool {
+		broadcast.h.BroadcastBinaryFilter(msg, func(q *Session) bool {
 			return session == q
 		})
 	})
@@ -624,7 +627,7 @@ func TestStop(t *testing.T) {
 		t.Error(err)
 	}
 
-	noecho.m.Close()
+	noecho.h.Close()
 }
 
 func TestSmallMessageBuffer(t *testing.T) {
@@ -712,7 +715,7 @@ func BenchmarkBroadcast(b *testing.B) {
 	}
 
 	for n := 0; n < b.N; n++ {
-		echo.m.Broadcast([]byte("test"))
+		echo.h.Broadcast([]byte("test"))
 
 		for i := 0; i < num; i++ {
 			conns[i].ReadMessage()
