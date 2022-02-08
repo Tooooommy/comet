@@ -4,30 +4,95 @@ import (
 	"errors"
 	"github.com/gorilla/websocket"
 	"sync"
+	"sync/atomic"
 )
 
-type Hub struct {
-	sessions   map[*Session]bool
-	broadcast  chan *envelope
-	register   chan *Session
-	unregister chan *Session
-	exit       chan *envelope
-	open       bool
-	rwmutex    *sync.RWMutex
+type (
+	Hub struct {
+		sessions   map[*Session]bool
+		register   chan *Session
+		unregister chan *Session
+		exit       chan *envelope
+		buffers    []chan *envelope
+		open       bool
+		rwmutex    *sync.RWMutex
+		option     *hubOption
+	}
+
+	hubOption struct {
+		sessionSize  uint64
+		bufferSize   uint64
+		bufferAmount uint64
+		bufferCount  uint64
+	}
+
+	HubOption func(*hubOption)
+)
+
+func newHubOption() *hubOption {
+	return &hubOption{
+		sessionSize:  1024,
+		bufferSize:   1024,
+		bufferAmount: 16,
+		bufferCount:  0,
+	}
 }
 
-func NewHub(broadcast uint64) *Hub {
+func WithHubSession(size uint64) HubOption {
+	return func(option *hubOption) {
+		option.sessionSize = size
+	}
+}
+
+func WithHubBufferAmount(amount uint64) HubOption {
+	return func(option *hubOption) {
+		option.bufferAmount = amount
+	}
+}
+
+func WithHubBufferSize(size uint64) HubOption {
+	return func(option *hubOption) {
+		option.bufferSize = size
+	}
+}
+
+func NewHub(options ...HubOption) *Hub {
+	opt := newHubOption()
+	for _, option := range options {
+		option(opt)
+	}
 	hub := &Hub{
 		sessions:   make(map[*Session]bool),
-		broadcast:  make(chan *envelope, broadcast),
 		register:   make(chan *Session),
 		unregister: make(chan *Session),
 		exit:       make(chan *envelope),
+		buffers:    make([]chan *envelope, opt.bufferAmount),
 		open:       true,
 		rwmutex:    &sync.RWMutex{},
+		option:     opt,
+	}
+	for i := uint64(0); i < opt.bufferAmount; i++ {
+		buffer := make(chan *envelope, opt.bufferSize)
+		hub.buffers[i] = buffer
+		go hub.proc(buffer)
 	}
 	go hub.run()
 	return hub
+}
+
+func (h *Hub) proc(buffer chan *envelope) {
+	for {
+		m, ok := <-buffer
+		if !ok {
+			break
+		}
+		h.Range(func(s *Session) {
+			if m.filter != nil && !m.filter(s) {
+				return
+			}
+			s.writeMessage(m)
+		})
+	}
 }
 
 func (h *Hub) run() {
@@ -44,13 +109,6 @@ loop:
 				delete(h.sessions, s)
 				h.rwmutex.Unlock()
 			}
-		case m := <-h.broadcast:
-			h.Range(func(s *Session) {
-				if m.filter != nil && !m.filter(s) {
-					return
-				}
-				s.writeMessage(m)
-			})
 		case m := <-h.exit:
 			h.Range(func(s *Session) {
 				s.writeMessage(m)
@@ -59,10 +117,17 @@ loop:
 			h.rwmutex.Lock()
 			h.sessions = map[*Session]bool{}
 			h.open = false
+			for _, buffer := range h.buffers {
+				close(buffer)
+			}
 			h.rwmutex.Unlock()
 			break loop
 		}
 	}
+}
+
+func (h *Hub) buffer() uint64 {
+	return atomic.AddUint64(&h.option.bufferCount, 1) % h.option.bufferAmount
 }
 
 func (h *Hub) Register(s *Session) {
@@ -104,7 +169,7 @@ func (h *Hub) Broadcast(msg []byte) error {
 	}
 
 	message := &envelope{t: websocket.TextMessage, msg: msg}
-	h.broadcast <- message
+	h.buffers[h.buffer()] <- message
 	return nil
 }
 
@@ -115,7 +180,7 @@ func (h *Hub) BroadcastFilter(msg []byte, fn func(*Session) bool) error {
 	}
 
 	message := &envelope{t: websocket.TextMessage, msg: msg, filter: fn}
-	h.broadcast <- message
+	h.buffers[h.buffer()] <- message
 	return nil
 }
 
@@ -143,7 +208,7 @@ func (h *Hub) BroadcastBinary(msg []byte) error {
 	}
 
 	message := &envelope{t: websocket.BinaryMessage, msg: msg}
-	h.broadcast <- message
+	h.buffers[h.buffer()] <- message
 	return nil
 }
 
@@ -154,7 +219,7 @@ func (h *Hub) BroadcastBinaryFilter(msg []byte, fn func(*Session) bool) error {
 	}
 
 	message := &envelope{t: websocket.BinaryMessage, msg: msg, filter: fn}
-	h.broadcast <- message
+	h.buffers[h.buffer()] <- message
 	return nil
 }
 

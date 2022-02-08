@@ -16,7 +16,7 @@ type filterFunc func(*Session) bool
 // Comet implements a websocket manager.
 type (
 	Comet struct {
-		Config                   *Config
+		Config                   *Conf
 		Upgrader                 *websocket.Upgrader
 		messageHandler           handleMessageFunc
 		messageHandlerBinary     handleMessageFunc
@@ -29,12 +29,12 @@ type (
 		pongHandler              handleSessionFunc
 	}
 
-	CometOpt func(*Config)
+	CometOpt func(*Conf)
 )
 
-// New creates a new comet instance with default Upgrader and Config.
+// New creates a new comet instance with default Upgrader and CometConf.
 func New(options ...CometOpt) *Comet {
-	cfg := newConfig()
+	cfg := newConf()
 	for _, option := range options {
 		option(cfg)
 	}

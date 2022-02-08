@@ -1,4 +1,4 @@
-# melody
+# Comet : fork [Melody](https://github.com/olahol/melody)
 
 [![Build Status](https://travis-ci.org/olahol/melody.svg)](https://travis-ci.org/olahol/melody)
 [![Coverage Status](https://img.shields.io/coveralls/olahol/melody.svg?style=flat)](https://coveralls.io/r/olahol/melody)
@@ -6,7 +6,7 @@
 
 > :notes: Minimalist websocket framework for Go.
 
-Melody is websocket framework based on [github.com/gorilla/websocket](https://github.com/gorilla/websocket)
+Comet is websocket framework based on [github.com/gorilla/websocket](https://github.com/gorilla/websocket)
 that abstracts away the tedious parts of handling websockets. It gets out of
 your way so you can write real-time apps. Features include:
 
