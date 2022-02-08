@@ -96,7 +96,6 @@ func (h *Hub) proc(buffer chan *envelope) {
 }
 
 func (h *Hub) run() {
-loop:
 	for {
 		select {
 		case s := <-h.register:
@@ -121,7 +120,7 @@ loop:
 				close(buffer)
 			}
 			h.rwmutex.Unlock()
-			break loop
+			return
 		}
 	}
 }
