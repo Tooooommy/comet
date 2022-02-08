@@ -9,7 +9,7 @@ import (
 func main() {
 	r := gin.Default()
 	m := comet.New()
-	h := comet.NewHub(1024)
+	h := comet.NewHub()
 
 	r.GET("/", func(c *gin.Context) {
 		http.ServeFile(c.Writer, c.Request, "index.html")

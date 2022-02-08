@@ -18,7 +18,7 @@ type GopherInfo struct {
 func main() {
 	router := gin.Default()
 	m := comet.New()
-	h := comet.NewHub(1024)
+	h := comet.NewHub()
 	gophers := make(map[*comet.Session]*GopherInfo)
 	lock := new(sync.Mutex)
 	counter := 0

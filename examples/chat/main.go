@@ -9,7 +9,7 @@ import (
 func main() {
 	r := gin.Default()
 	m := comet.New()
-	h := comet.NewHub(1024)
+	h := comet.NewHub()
 	m.HandleConnect(func(session *comet.Session) {
 		h.Register(session)
 	})

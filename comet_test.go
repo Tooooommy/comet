@@ -21,7 +21,7 @@ type TestServer struct {
 
 func NewTestServerHandler(handler handleMessageFunc) *TestServer {
 	m := New()
-	h := NewHub(1024)
+	h := NewHub()
 	m.HandleMessage(handler)
 	return &TestServer{
 		m: m,
