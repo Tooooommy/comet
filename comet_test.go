@@ -37,7 +37,7 @@ func NewTestServer() *TestServer {
 }
 
 func (s *TestServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.m.HandleRequest(w, r)
+	_ = HandleRequest(s.m)(w, r)
 }
 
 func NewDialer(url string) (*websocket.Conn, error) {
@@ -288,12 +288,6 @@ func TestUpgrader(t *testing.T) {
 	})
 	server := httptest.NewServer(broadcast)
 	defer server.Close()
-
-	broadcast.m.Upgrader = &websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin:     func(r *http.Request) bool { return false },
-	}
 
 	broadcast.m.HandleError(func(session *Session, err error) {
 		if err == nil || err.Error() != "websocket: origin not allowed" {

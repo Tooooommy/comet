@@ -28,7 +28,7 @@ func main() {
 	})
 
 	router.GET("/ws", func(c *gin.Context) {
-		m.HandleRequest(c.Writer, c.Request)
+		_ = comet.HandleRequest(m)(c.Writer, c.Request)
 	})
 
 	m.HandleConnect(func(s *comet.Session) {

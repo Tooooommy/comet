@@ -1,10 +1,7 @@
 package comet
 
 import (
-	"net/http"
 	"sync"
-
-	"github.com/gorilla/websocket"
 )
 
 type handleMessageFunc func(*Session, []byte)
@@ -17,7 +14,6 @@ type filterFunc func(*Session) bool
 type (
 	Comet struct {
 		Config                   *Conf
-		Upgrader                 *websocket.Upgrader
 		messageHandler           handleMessageFunc
 		messageHandlerBinary     handleMessageFunc
 		messageSentHandler       handleMessageFunc
@@ -29,25 +25,18 @@ type (
 		pongHandler              handleSessionFunc
 	}
 
-	CometOpt func(*Conf)
+	Option func(*Conf)
 )
 
 // New creates a new comet instance with default Upgrader and CometConf.
-func New(options ...CometOpt) *Comet {
+func New(options ...Option) *Comet {
 	cfg := newConf()
 	for _, option := range options {
 		option(cfg)
 	}
 
-	upgrader := &websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin:     func(r *http.Request) bool { return true },
-	}
-
 	return &Comet{
 		Config:                   cfg,
-		Upgrader:                 upgrader,
 		messageHandler:           func(*Session, []byte) {},
 		messageHandlerBinary:     func(*Session, []byte) {},
 		messageSentHandler:       func(*Session, []byte) {},
@@ -119,21 +108,9 @@ func (m *Comet) HandleClose(fn func(*Session, int, string) error) {
 	}
 }
 
-// HandleRequest upgrades http requests to websocket connections and dispatches them to be handled by the comet instance.
-func (m *Comet) HandleRequest(w http.ResponseWriter, r *http.Request) error {
-	return m.HandleRequestWithKeys(w, r, nil)
-}
-
-// HandleRequestWithKeys does the same as HandleRequest but populates session.keys with keys.
-func (m *Comet) HandleRequestWithKeys(w http.ResponseWriter, r *http.Request, keys map[string]interface{}) error {
-	conn, err := m.Upgrader.Upgrade(w, r, w.Header())
-
-	if err != nil {
-		return err
-	}
-
+// Handle keep websocket or tcp connections and dispatches them to be handled by the comet instance.
+func (m *Comet) Handle(conn Conn, keys map[string]interface{}) error  {
 	session := &Session{
-		req:     r,
 		keys:    keys,
 		conn:    conn,
 		buffer:  NewRingBuffer(m.Config.MessageBufferSize),

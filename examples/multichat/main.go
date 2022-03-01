@@ -20,7 +20,7 @@ func main() {
 	})
 
 	r.GET("/channel/:name/ws", func(c *gin.Context) {
-		m.HandleRequest(c.Writer, c.Request)
+		_ = comet.HandleRequest(m)(c.Writer, c.Request)
 	})
 
 	m.HandleConnect(func(session *comet.Session) {
@@ -32,10 +32,10 @@ func main() {
 	})
 
 	m.HandleMessage(func(s *comet.Session, msg []byte) {
-		h.BroadcastFilter(msg, func(q *comet.Session) bool {
+		_ = h.BroadcastFilter(msg, func(q *comet.Session) bool {
 			return q.Request().URL.Path == s.Request().URL.Path
 		})
 	})
 
-	r.Run(":5000")
+	_ = r.Run(":5000")
 }

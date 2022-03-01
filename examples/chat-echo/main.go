@@ -28,8 +28,7 @@ func main() {
 	})
 
 	e.GET("/ws", func(c echo.Context) error {
-		m.HandleRequest(c.Response(), c.Request())
-		return nil
+		return comet.HandleRequest(m)(c.Response(), c.Request())
 	})
 
 	m.HandleMessage(func(s *comet.Session, msg []byte) {
