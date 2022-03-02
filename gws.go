@@ -16,7 +16,7 @@ func NewGConn(conn *websocket.Conn) Conn  {
 	return &gConn{conn}
 }
 
-func HandleRequest(m *Comet) HandlerFunc  {
+func HandleGws(m *Comet) HandlerFunc  {
 	upgrader := &websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -33,6 +33,7 @@ func HandleRequest(m *Comet) HandlerFunc  {
 			keys[k] = v
 		}
 
-		return m.Handle(NewGConn(conn), keys)
+		m.Handle(NewGConn(conn), keys)
+		return nil
 	}
 }

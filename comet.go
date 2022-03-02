@@ -109,7 +109,7 @@ func (m *Comet) HandleClose(fn func(*Session, int, string) error) {
 }
 
 // Handle keep websocket or tcp connections and dispatches them to be handled by the comet instance.
-func (m *Comet) Handle(conn Conn, keys map[string]interface{}) error  {
+func (m *Comet) Handle(conn Conn, keys map[string]interface{}) {
 	session := &Session{
 		keys:    keys,
 		conn:    conn,
@@ -128,6 +128,4 @@ func (m *Comet) Handle(conn Conn, keys map[string]interface{}) error  {
 	session.close()
 
 	m.disconnectHandler(session)
-
-	return nil
 }

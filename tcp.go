@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+
+type AcceptFunc = func(string) error
 // tcp conn
 type tConn struct {
 	net.Conn
@@ -23,6 +25,22 @@ func NewTConn(conn net.Conn) Conn {
 	c.SetPingHandler(func(s string) error {return nil})
 	c.SetCloseHandler(func(i int, s string) error {return nil})
 	return c
+}
+
+func HandelTcp(m *Comet)  AcceptFunc {
+	return func(addr string) error {
+		listener, err := net.Listen("tcp", addr)
+		if err != nil {
+			return err
+		}
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return err
+			}
+			go m.Handle(NewTConn(conn), map[string]interface{}{})
+		}
+	}
 }
 
 func (c *tConn) WriteMessage(_type int, data []byte) error {
